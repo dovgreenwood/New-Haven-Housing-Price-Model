@@ -1,0 +1,680 @@
+---
+title: "Housing Project"
+editor_options:
+  markdown:
+    wrap: 72
+date: "9/22/21"
+output:
+  html_document:
+    df_print: paged
+---
+
+#### Team Members: Tanvi Yende, Linda Mao, Dov Greenwood
+
+## Reading in Cleaned Data & Completing Formatting as Necessary
+
+```{r warning=FALSE}
+#reading in required libraries
+library(ggplot2)
+library(scales)
+library(gridExtra)
+library(dplyr)
+library(tidyverse)
+
+options(warn=-1)
+```
+
+```{r}
+#reading in data
+dat <- read.csv("data/finalData.csv")
+head(dat)
+```
+
+```{r}
+#basic data cleaning
+dat <- dat[dat$beds != "0",]
+dat <- unique(dat)
+
+#coercing ac variable to be a binary instead of yes/no format
+dat$ac <- ifelse(dat$ac == 'yes', TRUE, FALSE)
+```
+
+## Explanation of Data Reconciliation
+
+\n Data Reconciliation: \n There were multiple differences in our data
+resulting from our different approaches to wrangling the raw HTML data,
+which required reconciliation. Primarily, the differences resulted from
+different grep searches; these included comprehensiveness (e.g. whether
+we searched for the word "Ttl" as well as "Total") and use of different
+categories for the same category (namely, "land model" versus "building
+model"). A more significant difference came in whether or not to include
+half bathrooms in the bathroom count or not, especially since two half
+bathrooms would some to one full bathroom in the raw sum, even though in
+reality two half bathrooms do not equate to one whole bathroom. We
+ultimately decided to include half bathrooms in the sum as we would lose
+significant data from excluding them.
+
+\n Data Cleaning: \n After the data was reconciled, some cleaning was
+necessary. Some of the entries had extra whitespace before and after the
+actual data, which we removed using the trimws() function. In the
+specific case of the heating fuel column, identical options were
+sometimes labeled differently---namely, "Gas/Oil" and "Oil/Gas"---which
+we standardized by assigning both such values to "Gas/Oil." \n Then, we
+examined each variable and if there were any glaring outliers. In the
+case of the "Percent Good" variable, only two properties exceeded 100%
+Good. However, upon examining the properties, we found that they were
+unusually nice (high value, many bedrooms, etc.), which warranted the
+very high value. \n
+
+For style, we removed "Apt House," which appeared to have been
+erroneously labeled with the model "Single Family." In this project, we
+are only looking at true single family homes, and this apartment house
+would have skewed bedroom/bathroom numbers--thus, we deleted "Apt House"
+styles from the dataset. Other potentially disruptive styles, like
+"Inn," had normal bedroom/bathroom values, so we decided to keep them.
+\n
+
+Finally, we went through the categorical variables and then factorized
+them to be able to be used in lm(). Through this, we factorized style
+("Colonial" as the reference level), beds, and neighborhood ("0101" as
+reference level because most homes were in 0101). For AC, we realized
+that it would be more informative to draw the line between having AC or
+not having AC. Thus, we changed the AC variable accordingly and
+factorized with "no" as reference level. \
+
+## Exploratory Analysis
+
+### Descriptions
+
+```{r}
+#creating decade function for the sake of exploratory analysis
+floor_decade    = function(value){ return(value - value %% 10) }
+```
+
+```{r}
+#Visualizing the type and size of data
+str(dat)
+```
+
+```{r}
+#Finding descriptive information on value, our variable of interest
+summary(dat$value)
+```
+
+#### Explanation of Data Exploration & Analysis
+
+\n Data Transformation: \n For land (in acres), there was an outlier at
+16.91, when the median was 0.17. However, we did not remove it, as we
+performed a log transformation on this variable for our model, which
+brought the value significantly closer to the rest of the data. We also
+put log transformations on the variables living, land, and value because
+they were skewed. 
+
+Next, we eliminated variables to use in the model. We removed the
+"buildings" and "model" variables, as all of the values were 1 (because
+these were the only ones selected for building the model); and the
+"heatfuel" variable, as 9140 out of the 9200 data point were "Gas/Oil"
+(so the data seemed relatively insubstantial). \n
+
+We also checked for collinearity with good vs. grade, beds vs. baths,
+beds vs. living space, and baths vs. living space. For all of these
+comparisons except good vs. grade, the adjusted R-squareds were
+relatively low \< 0.5, so we opted to keep both. For good vs. grade, the
+adjusted R-squared was high and significantly correlated, so we
+determined that we should try to keep good over grade because it was
+numeric. \n
+
+How Strongly/Weakly Associated Are Certain Variables with Assessed
+Value:
+
+\n Living, beds, baths, percent good, grade, land are all positively
+associated and appear to be strongly associated with assessed value. Year built
+appears to be weakly associated with assessed value, and it is unclear if it is
+positively or negatively associated. \n
+
+Possible misleading results (because we are considering only one variable at a
+time):
+It was difficult to interpret the relationship between style and log value, and
+this can be misleading (in our final model, style was an important independent
+variable). For heat fuel, homes overwhelmingly fell into the Gas/Oil type, so
+if we were to look at this variable just by itself, we would miss a lot of how
+this variable actually affects assessed value.
+\n 
+
+\n Benefits & Drawbacks of Defining Beds and Baths as Numeric Data:
+
+\n The benefit of defining beds and baths as numeric data is
+interpretability--people understand the number of beds and baths
+intuitively on a number scale. The drawbacks of defining them as numeric
+data is that the data doesn't vary linearly with the dependent variable,
+log value, and it was very discrete data (in our model, we actually
+chose to define bed as a categorical variable).
+
+### Explanatory Plots
+
+#### Visualizing Assessed Value
+
+```{r echo=FALSE}
+
+p1 <- ggplot(data = dat, aes(squish(value, range = c(0,2500000)))) +
+  geom_histogram(bins = 100,fill="#20B2AA", alpha=0.75, color="white") +
+  theme_minimal() +
+  labs(x="Assessed Value ($)", title = "Histogram for Assessed Value \n w/ 'Squished' Outliers") +
+  theme(plot.title = element_text(size=10), axis.text.x = element_text(angle = 45, size=10), axis.text.y = element_text(size=8))
+
+n = 2000
+mean = 0
+sd = 1
+binwidth = 0.3
+p2 <- ggplot(data = dat, aes(log(value))) +
+  geom_histogram(bins = 100,fill="#20B2AA", alpha=0.75, color="white") +
+  theme_minimal() +
+  labs(x="Log Assessed Value ($)", title = "Histogram for Log Assessed Value \n w/ Normal Curve", y="count") +
+  stat_function(fun = function(x) dnorm(x, mean = mean(log(dat$value)), sd = sd(log(dat$value))) * n * binwidth,
+    color = "darkred", size = 1) +
+  theme(plot.title = element_text(size=10), axis.text.x = element_text(angle = 45, size=10), axis.text.y = element_text(size=8))
+grid.arrange(p1,p2,ncol=2)
+```
+
+\n Assessed value is right-skewed and exponential, which will be an
+issue for a linear model. The log transformation shows that this
+transformation appropriately creates a normal distribution.
+
+#### Visualizing Number of Beds
+
+```{r echo=FALSE}
+p15 <- ggplot(data = dat, aes(beds)) +
+  geom_bar(fill="#20B2AA", alpha=0.75) +
+  theme_minimal() +
+  labs(title = "Histogram of Beds")
+
+p16 <- ggplot(data = dat, aes(x=as.factor(beds),y=log(value))) +
+  geom_boxplot() +
+  coord_flip() +
+  labs(x="Beds", title = "Log Value by Beds", y="Log Assessed Value ($)")+
+  theme_minimal()
+```
+
+```{r echo=FALSE}
+p15
+```
+
+\n The distribution of beds appears to be right-skewed.
+
+```{r}
+p16
+```
+
+\n Because the relationship between log value and log beds still does
+not vary linearly, we will treat beds as a categorical variable.
+
+#### Visualizing Land Variable
+
+```{r echo=FALSE}
+p5<- ggplot(data = dat, aes(squish(land))) +
+  geom_histogram(bins = 100, fill="#20B2AA", alpha=0.75, color="white") +
+  theme_minimal() +
+  labs(x="Land (Acres)", title = "Histogram for Land w/ Outliers 'Squished'") 
+
+p6 <-  ggplot(data = dat, aes(squish(land), log(value))) +
+  geom_point(fill="#20B2AA", alpha=0.75, color="#20B2AA") +
+  theme_minimal() +
+  labs(x="Land (Acres) w/ 'Squished' Outliers", y="Log Assessed Value", title = "Log Assessed Value vs. Land (acres)") +
+  theme(plot.title = element_text(size=10), axis.text.x = element_text( size=10), axis.text.y = element_text(size=8))
+
+p7 <-  ggplot(data = dat, aes(log(land), log(value))) +
+  geom_point(fill="#20B2AA", alpha=0.75, color="#20B2AA") +
+  theme_minimal() +
+  labs(x="Log Land (Acres) w/ Outliers 'Squished'", y="Log Assessed Value", title = "Log Assessed Value vs. Log Land (acres)") +
+  theme(plot.title = element_text(size=10), axis.text.x = element_text( size=10), axis.text.y = element_text(size=8))
+```
+
+```{r}
+p5
+```
+
+\n The histogram shows that the land variable appears to be
+right-skewed.
+
+```{r echo=FALSE}
+grid.arrange(p6, p7, ncol=2)
+```
+
+\n The relationship between log value and land appears exponential, but
+log value and log land vary more linearly. In our model, we will use log
+land for this reason.
+
+#### Visualizing Living Area
+
+```{r echo=FALSE}
+p8 <- ggplot(data = dat, aes(living)) +
+  geom_histogram(bins = 100, fill="#20B2AA", alpha=0.75, color="white") +
+  theme_minimal() +
+  labs(x="Living Area (sq ft)", title = "Histogram for Living Area") 
+
+p9 <-  ggplot(data = dat, aes(living, log(value))) +
+  geom_point(fill="#20B2AA", alpha=0.75, color="#20B2AA") +
+  theme_minimal() +
+  labs(x="Living Area (sq ft)", y="Log Assessed Value", title = "Log Assessed Value vs. Living Area") +
+  theme(plot.title = element_text(size=10), axis.text.x = element_text( size=10), axis.text.y = element_text(size=8))
+
+p10 <-  ggplot(data = dat, aes(log(living), log(value))) +
+  geom_point(fill="#20B2AA", alpha=0.75, color="#20B2AA") +
+  theme_minimal() +
+  labs(x="Log Living Area (sq ft)", y="Log Assessed Value", title = "Log Assessed Value vs. Log Living Area") +
+  theme(plot.title = element_text(size=10), axis.text.x = element_text( size=10), axis.text.y = element_text(size=8))
+```
+
+```{r echo=FALSE}
+p8
+```
+
+\n The histogram for living area shows that the variable is
+right-skewed.
+
+```{r echo=FALSE}
+grid.arrange(p9,p10, ncol=2)
+```
+
+\n These plots show that while living area varies exponentially with log
+value, while log value and log land vary linearly.
+
+#### Visualizing AC Type
+
+\n Note that we coerced ac to be a binary of either with or without ac
+
+```{r echo=FALSE}
+ac_dat <- read.csv("data/finalData.csv")
+
+p22a <- ggplot(data = ac_dat, aes(ac)) +
+  geom_bar(fill="#20B2AA", alpha=0.75) +
+  theme_minimal() +
+  labs(title = "Histogram of AC without Binary Coercion")
+p22a
+```
+\n This graph shows the categories before we created a binary variable. &nbsp & None were considered to be indicators of no AC, while other categories were considered to be AC. 
+
+```{r echo=FALSE}
+p22 <- ggplot(data = dat, aes(ac)) +
+  geom_bar(fill="#20B2AA", alpha=0.75) +
+  theme_minimal() +
+  labs(title = "Histogram of AC with Binary Coercion")
+
+p23 <- ggplot(data = dat, aes(x=ac,y=log(value))) +
+  geom_boxplot() +
+  coord_flip() +
+  labs(x="AC", title = "Log Value by AC", y="Log Assessed Value ($)")+
+  theme_minimal()
+```
+
+```{r echo=FALSE}
+p22
+```
+
+\n The distribution shows more houses don't have ac than do.
+
+```{r echo=FALSE}
+p23
+```
+
+\n Homes with AC may have a higher value than those without, but this
+relationship is weak from this visualization.
+
+#### Visualizing Percent Good
+
+```{r echo = FALSE}
+p9 <- ggplot(data = dat, aes(good)) +
+  geom_histogram(bins = 100, fill="#20B2AA", alpha=0.75, color="white") +
+  theme_minimal() +
+  labs(x="Percent Good", title = "Histogram for Percent Good") 
+
+p10 <-  ggplot(data = dat, aes(good, log(value))) +
+  geom_point(fill="#20B2AA", alpha=0.75, color="#20B2AA") +
+  theme_minimal() +
+  labs(x="Percent Good", y="Log Assessed Value", title = "Log Assessed Value vs. Percent Good") 
+```
+
+```{r echo=FALSE}
+p9
+```
+
+\n The distribution is not clear from the histogram.
+
+```{r echo=FALSE}
+p10
+```
+
+\n Percent good seems to vary linearly with log value.
+
+#### Visualizing Year Variable
+
+```{r echo=FALSE}
+p3 <- ggplot(data = dat, aes(year)) +
+  geom_histogram(bins = 100, fill="#20B2AA", alpha=0.75, color="white") +
+  theme_minimal() +
+  labs(x="Year", title = "Histogram for Year") +
+  theme_minimal()
+
+p4 <- ggplot(data = dat, aes(x=as.factor(floor_decade(year)),y=log(value))) +
+  geom_boxplot() +
+  coord_flip() +
+  labs(x="Decade", title = "Log Value by Decade", y="Log Assessed Value ($)")+
+  theme_minimal()
+```
+
+```{r echo=FALSE}
+p3
+```
+
+\n There seems to be many houses built in 1900, possibly indicating a
+data error or a large volume of houses built in 1900. We couldn't
+resolve this question via historical research. There also seems to be a
+cluster of houses built around 1950.
+
+```{r echo=FALSE}
+p4
+```
+
+\n There doesn't seem to be a clear relationship between year the house
+was built in and its assessed value.
+
+#### Visualizing Baths
+
+```{r echo=FALSE}
+p17 <- ggplot(data = dat, aes(baths)) +
+  geom_bar(fill="#20B2AA", alpha=0.75) +
+  theme_minimal() +
+  labs(title = "Histogram of Baths")
+
+p18 <- ggplot(data = dat, aes(x=as.factor(baths),y=log(value))) +
+  geom_boxplot() +
+  coord_flip() +
+  labs(x="Baths", title = "Log Value by Baths", y="Log Assessed Value ($)")+
+  theme_minimal()
+```
+
+```{r echo=FALSE, warning=FALSE}
+p17
+```
+
+\n The distribution of baths appears to be right-skewed.
+
+```{r}
+p18
+```
+
+\n There appears to be a somewhat linear relationship between baths and
+log value. Upon testing in the model there was not a significant
+difference between treating baths numerically or categorically, so we
+kept it numeric to allow for half baths.
+
+
+#### Visualizing Style
+
+```{r echo=TRUE}
+dat$style <- reorder(as.factor(dat$style),as.factor(dat$style), FUN = length) #reordering levels so that they appear in order of frequency
+p11 <- ggplot(data = dat, aes(style)) +
+  geom_bar(fill="#20B2AA", alpha=0.75) +
+  theme_minimal() +
+  coord_flip() +
+  labs(title = "Histogram of Styles")
+
+
+p12 <- ggplot(data = dat, aes(x=style,y=log(value))) +
+  geom_boxplot() +
+  coord_flip() +
+  labs(x="Style", title = "Log Value by Style", y="Log Assessed Value ($)")+
+  theme_minimal()
+```
+
+```{r echo=FALSE}
+p11
+```
+
+\n Colonial is by far the most frequent style in the data set.
+
+```{r echo=FALSE}
+p12
+```
+
+\n There doesn't appear to be an easily interpretable relationship
+between style and log value from this plot.
+
+#### Visualizing Grade
+
+```{r echo=FALSE}
+p13 <- ggplot(data = dat, aes(grade)) +
+  geom_bar(fill="#20B2AA", alpha=0.75) +
+  theme_minimal() +
+  coord_flip() +
+  labs(title = "Histogram of Grades")
+
+p14 <- ggplot(data = dat, aes(x=reorder(grade,value),y=log(value))) +
+  geom_boxplot() +
+  coord_flip() +
+  labs(x="Grade", title = "Log Value by Grade", y="Log Assessed Value ($)")+
+  theme_minimal()
+```
+
+```{r}
+p13
+```
+
+\n Most houses are given an average grade
+
+```{r echo=FALSE}
+p14
+```
+
+\n There is a predictable linear relationship between the grade and
+value of the houses in our data set.
+
+#### Visualizing Heat Fuel
+
+```{r echo=FALSE}
+p19 <- ggplot(data = dat, aes(heatfuel)) +
+  geom_bar(fill="#20B2AA", alpha=0.75) +
+  theme_minimal() +
+  labs(title = "Histogram of Heat Fuel Type")
+```
+
+```{r echo=FALSE}
+p19
+```
+
+\n Given that Gas/Oil makes up the vast majority of data points, this
+may not be a variable of useful intepretability.
+
+#### Visualizing Heat Type
+
+```{r echo=FALSE}
+p20 <- ggplot(data = dat, aes(heattype)) +
+  geom_bar(fill="#20B2AA", alpha=0.75) +
+  theme_minimal() +
+  labs(title = "Histogram of Heat Type") + 
+  coord_flip()
+
+p21 <- ggplot(data = dat, aes(x=heattype,y=log(value))) +
+  geom_boxplot() +
+  coord_flip() +
+  labs(x="Heat Type", title = "Log Value by Heat Type", y="Log Assessed Value ($)")+
+  theme_minimal()
+```
+
+```{r echo=FALSE}
+p20
+```
+
+\n The histogram shows that most houses have FA/HW/ST heating. Research
+indicates that this probably stands for Forced Air/Hot Water/Steam.
+
+```{r echo=FALSE}
+p21
+```
+
+\n There doesn't appear to be an obvious relationship between heat type
+and log value.
+
+#### Visualizing Neighborhoods
+
+```{r echo=FALSE}
+dat$nghd <- reorder(as.factor(dat$nghd),as.factor(dat$nghd), FUN = length) #reordering levels so that they appear in order of frequency
+p38 <- ggplot(data = dat, aes(nghd)) +
+  geom_bar(fill="#20B2AA", alpha=0.75) +
+  theme_minimal() +
+  labs(title = "Histogram of Neighborhoods") +
+  coord_flip()
+p38
+```
+
+\n The most common neighborhood the houses are found in is labeled by
+code "0101".
+
+## Building the Statistical Model
+
+\n We tested both forwards and backwards stepwise regression and chose to use backwards regression, as it resulted in better and more interpretable models. However, the two didn't produce vastly different results. 
+
+### Building the Linear Model
+```{r}
+####-----------SETUP-----------####
+set.seed(31415)
+folds <- 10
+
+# Remove extraneous data, set rownames to PID
+data <- dat[, !(names(dat) %in% c('pid', 'buildings', 'model', 'address', 'grade', 'heatfuel'))]
+
+# Remove outliers
+data <- data[data$beds > 0,]
+data <- data[data$baths > 0,]
+
+# Formatting the data
+data$style <- as.factor(trimws(data$style))
+data$heattype <- as.factor(trimws(data$heattype))
+data$nghd <- as.factor(trimws(data$nghd))
+data$beds <- as.factor(data$beds)
+#data$ac <- as.factor(data$ac)
+
+# Remove rows that are now identical
+data <- unique(data)
+
+# From previous analysis, we find that the log of certain values gives greater linear correlation
+# than the values themselves
+data$value <- log(data$value)
+data$land <- log(data$land)
+data$living <- log(data$living)
+
+# After performing the log, we need to remove 'Inf's that may have appeared
+data <- filter(data, is.finite(data$land))
+
+
+####-----------MAIN-----------####
+# Randomize the order of checking the columns. Also ignore the value column, as it is the response
+# variable, and add '' to ensure that the first loop will use all columns.
+selected <- names(data)[sample(length(data))]
+selected <- c('', selected[selected != 'value'])
+
+prev.RMSE <- Inf
+
+for(col in selected) {
+  avg.RMSE <- 0
+  
+  fields <- selected[selected != col]
+  sub.data <- data[c('value', fields)]
+  
+  print(fields)
+  
+  for(i in 1:folds) {
+    row.order <- sample(nrow(data))
+    train.rows <- sub.data[head(row.order, nrow(data)*0.8),]
+    test.rows <- sub.data[tail(row.order, -nrow(data)*0.8),]
+    
+    # The test.rows DF sometimes gets an NA row for no apparent reason...
+    test.rows <- filter(test.rows, !is.na(test.rows$value))
+    
+    curr.model <- suppressWarnings(lm(value ~ ., train.rows))
+    
+    # Fill out the factor levels that were not used during training
+    curr.model$xlevels$heattype <- levels(data$heattype)
+    curr.model$xlevels$style <- levels(data$style)
+    curr.model$xlevels$nghd <- levels(data$nghd)
+    curr.model$xlevels$beds <- levels(data$beds)
+    #curr.model$xlevels$ac <- levels(data$ac)
+    
+    predictions <- predict.lm(curr.model, test.rows)
+    avg.RMSE = avg.RMSE + sqrt(mean((test.rows$value - predictions)^2))
+  }
+  
+  avg.RMSE <- avg.RMSE / folds
+  
+  print(paste('Average:', avg.RMSE))
+  if(avg.RMSE < prev.RMSE) {
+    selected <- fields
+    prev.RMSE <- avg.RMSE
+    print('Updated!')
+  }
+}
+
+print(paste('Final RMSE:', prev.RMSE))
+print(selected)
+
+final.model <- lm(value ~ ., data[c('value', selected)])
+
+summary(final.model)
+```
+
+### Observations about the Model
+
+\n Our final linear model indicates highly significant relationships between assessed value and land, baths, ac, good, living, and neighborhood (most p-values < 2e-16, a couple p-value < 0.05 in neighborhood). Year was initially included and then removed due to a non-significant contribution. Because we had factor variables, the intercept describes a single family home with all the baseline reference levels ("no" AC and “0101” neighborhood). The fact that the chosen independent variables for our model had significant influences over our dependent variable are not surprising, as we went through a rigorous selection process to choose these variables to ensure that they benefited the model. 
+
+\n Land has a positive relationship with the assessed value of a single family home. For every 1% increase in land (in acres), assessed value increases by 0.095% (both variables are log-transformed, so the coefficient represents the percent change in the dependent variable for every 1% increase in the independent variable). This makes sense intuitively—land is desirable, and the larger the plot of land the home is on, the more likely it would be worth more. 
+
+\n Baths also has a positive relationship with the assessed value of a single family home. As baths increases by one (either through 1 full bath or 2 half baths), assessed value increases by about 4.44% (coefficient is 0.0435, so (exp(0.1231)-1)*100 = 4.44%). 4.44%% is relatively large, and again, this makes sense on an intuitive level. The more bathrooms, the more expensive the home would be. 
+
+
+\n Having AC has a positive impact with the assessed value of a single family home. Going from having no AC to having AC would increase the home value by about 5% (coefficient = 0.032, so (exp(0.032)-1)*100 = 3.25%). AC is a highly desirable amenity for a home, so accordingly it would also boost property value. 
+
+\n Percent good has a positive relationship with the assessed value of a single family home. As percent good increases by 1%, assessed value increases by 1.15% (coefficient = 0.011, so (exp(0.011)-1)*100 = 1.15%). Percent good is already an estimate of value by professionals, so again this makes sense that there would be a boost in assessed value if percent good increases.
+
+\n Neighborhood also matters. The rationale for why neighborhoods “X,” “2300,” “1800,” “1100,” “2500,” “1000,” “0900,” “0500,” “0400,” “0700,” “0600,” “2600,” “1900,” “2700,” “0300,” “2800,” “2000,” “0200,” “1700,” “0800,” and “1600” had lesser assessed value, but why neighborhoods “DT,” “1801,” “1400,” “1200,” “1500,” “2200,” “1300,” “2900,” and “2400” had higher assessed value when compared to the reference level of “0100” is not easily understood without knowing more about these individual neighborhoods. A vast majority of these neighborhoods have highly significant coefficients (p-value \<2e-16), so they are clearly distinguished from each other.
+
+
+## Predictions
+```{r}
+pids <- c('1000', '12824', '12773', '19128')
+
+dat$value <- log(dat$value)
+dat$land <- log(dat$land)
+dat$living <- log(dat$living)
+dat$beds <- as.factor(dat$beds)
+
+pred <- data.frame(1:4)
+pred$pid <- pids
+pred$clevergroupname <- NA
+pred$yhat <- NA
+pred$lower <- NA
+pred$upper <- NA
+
+for(i in 1:length(pids)) {
+  p = pids[i]
+  interval <- predict.lm(final.model, dat[dat$pid == p,][1,], interval = 'predict')
+  print(paste('True value:', exp(dat[dat$pid == p,][1,]$value)))
+  print('Prediction interval:', )
+  print(exp(interval))
+  
+  pred[i,"yhat"] <- exp(interval[1])
+  pred[i, "lower"] <- exp(interval[2])
+  pred[i, "upper"] <- exp(interval[3])
+}
+
+pred$clevergroupname <- "DTL"
+```
+
+```{r}
+pred
+```
+
+
+```{r}
+write.csv(pred,"DTL.csv")
+```
+

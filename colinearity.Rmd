@@ -1,0 +1,76 @@
+---
+title: "Colinearity"
+author: "Dov Greenwood"
+date: "9/17/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+# Using Linda's data for now . . .
+data <- read.csv('data/lm934_housing_extracted.csv')
+head(data)
+```
+
+```{r, echo=FALSE}
+# Cleaning the data and rearranging by PID
+data <- data[order(data$pid),]
+
+data$style <- factor(trimws(data$style))
+data$grade <- factor(trimws(data$grade))
+data$heattype <- factor(trimws(data$heattype))
+data$ac <- trimws(data$ac)
+data$nghd <- factor(trimws(data$nghd))
+
+data$heatfuel <- gsub('Gas/Oil', 'Oil/Gas', data$heatfuel, fixed = TRUE)
+data$heatfuel <- factor(trimws(data$heatfuel))
+
+head(data)
+```
+
+
+```{r echo=FALSE}
+# Remove extraneous data
+data <- data[, !(names(data) %in% c('pid', 'buildings', 'model', 'address', 'grade', 'heatfuel'))]
+
+# Simplify AC data
+data$ac <- !is.na(data$ac)
+```
+
+
+```{r}
+# Factorize the data
+data$year <- factor(data$year)
+
+```
+
+```{r}
+# Data summary by neighborhood
+nghds <- unique(data$nghd)
+mean.values <- vector()
+
+print(table(data$nghd))
+
+for(i in 1:length(nghds)) {
+  mean.values[i] <- mean(data[data$nghd == nghds[i],]$value)
+  print(paste0(nghds[i], ': ', mean.values[i]))
+}
+```
+
+```{r}
+head(data)
+```
+
+
+```{r}
+summary(data)
+```
+
+
+
+
+
+
